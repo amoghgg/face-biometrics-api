@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.env
+venv/
+.venv/
+
+# Models & large binaries (too large for git)
+backend/face_landmarker.task
+backend/insightface_models/
+
+# Runtime data (generated, not source)
+backend/captures/
+backend/face_db/
+
+# Logs
+*.log
+
+# macOS
+.DS_Store

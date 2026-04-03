@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Liveness Check</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1117;
+      color: #e8eaed;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 24px; color: #fff; }
+
+    #camera-container {
+      position: relative;
+      width: 360px;
+      height: 270px;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #1a1d27;
+      border: 2px solid #2a2d3a;
+    }
+
+    #video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+    #canvas { display: none; }
+
+    #overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Oval face guide */
+    .face-oval {
+      width: 140px;
+      height: 180px;
+      border: 3px solid rgba(255,255,255,0.25);
+      border-radius: 50%;
+      transition: border-color 0.3s;
+    }
+    .face-oval.active  { border-color: #4f8ef7; }
+    .face-oval.success { border-color: #34d399; }
+    .face-oval.error   { border-color: #f87171; }
+
+    #status-card {
+      margin-top: 24px;
+      width: 360px;
+      background: #1a1d27;
+      border: 1px solid #2a2d3a;
+      border-radius: 16px;
+      padding: 20px 24px;
+    }
+
+    #feedback-text {
+      font-size: 1.05rem;
+      font-weight: 500;
+      text-align: center;
+      min-height: 28px;
+      color: #e8eaed;
+    }
+
+    #step-indicators {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.72rem;
+      color: #6b7280;
+      transition: color 0.3s;
+    }
+    .step.active  { color: #4f8ef7; }
+    .step.done    { color: #34d399; }
+
+    .step-dot {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #2a2d3a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      transition: background 0.3s;
+    }
+    .step.active .step-dot  { background: #1e3a8a; }
+    .step.done   .step-dot  { background: #065f46; }
+
+    #progress-bar-wrap {
+      margin-top: 14px;
+      height: 4px;
+      background: #2a2d3a;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    #progress-bar {
+      height: 100%;
+      width: 0%;
+      background: #4f8ef7;
+      transition: width 0.2s, background 0.3s;
+      border-radius: 2px;
+    }
+
+    #start-btn {
+      margin-top: 20px;
+      width: 360px;
+      padding: 14px;
+      border-radius: 12px;
+      border: none;
+      background: #4f8ef7;
+      color: #fff;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #start-btn:hover  { background: #3b7de8; }
+    #start-btn:disabled { background: #2a2d3a; color: #6b7280; cursor: not-allowed; }
+
+    #token-box {
+      display: none;
+      margin-top: 16px;
+      width: 360px;
+      background: #052e16;
+      border: 1px solid #065f46;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 0.72rem;
+      color: #6ee7b7;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <h1>Identity Verification</h1>
+
+  <div id="camera-container">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div id="overlay">
+      <div class="face-oval" id="face-oval"></div>
+    </div>
+  </div>
+
+  <div id="status-card">
+    <div id="feedback-text">Click "Start Verification" to begin</div>
+    <div id="step-indicators">
+      <div class="step" id="step-0">
+        <div class="step-dot">←</div>
+        <span>Turn Left</span>
+      </div>
+      <div class="step" id="step-1">
+        <div class="step-dot">→</div>
+        <span>Turn Right</span>
+      </div>
+      <div class="step" id="step-2">
+        <div class="step-dot">😊</div>
+        <span>Smile</span>
+      </div>
+    </div>
+    <div id="progress-bar-wrap">
+      <div id="progress-bar"></div>
+    </div>
+  </div>
+
+  <button id="start-btn">Start Verification</button>
+  <div id="token-box"></div>
+
+  <script src="camera.js"></script>
+  <script src="liveness_client.js"></script>
+</body>
+</html>

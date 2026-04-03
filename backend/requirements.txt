@@ -1,0 +1,10 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+mediapipe>=0.10.11
+opencv-python-headless>=4.9.0
+numpy>=1.26.0
+pydantic>=2.6.0
+python-jose[cryptography]>=3.3.0
+insightface>=0.7.3
+onnxruntime>=1.17.0
+faiss-cpu>=1.8.0
