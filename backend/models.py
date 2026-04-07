@@ -39,6 +39,17 @@ class FaceMetrics(BaseModel):
     texture_variance: float = 0.0
     landmark_z_std: float = 0.0
     is_spoof: bool = False
+    # rPPG fields — populated once enough frames are buffered (~5 seconds)
+    rppg_bpm: Optional[float] = None         # estimated heart rate
+    rppg_confidence: Optional[float] = None  # 0–1, how dominant the peak is
+    rppg_ready: bool = False                 # False until MIN_SAMPLES of data collected
+    rppg_is_live: Optional[bool] = None      # True = heartbeat detected
+    rppg_sampling: bool = False              # True = this frame was accepted into buffer
+    rppg_samples: int = 0                   # how many good samples collected so far
+    rppg_verdict: str = "pending"           # "pending" | "real" | "synthetic"
+    # Forehead sampling region — for debug visualization
+    forehead_rgb: Optional[list[float]] = None       # [r, g, b] 0-255
+    forehead_bbox_norm: Optional[list[float]] = None  # [x1, y1, x2, y2] 0-1
 
 
 class FrameResponse(BaseModel):

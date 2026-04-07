@@ -49,7 +49,11 @@ class LivenessEngine:
         )
         self.detector = mp_vision.FaceLandmarker.create_from_options(options)
 
-    def process_frame(self, jpeg_bytes: bytes) -> FaceMetrics:
+    def process_frame(self, jpeg_bytes: bytes) -> "FaceMetrics":
+        """
+        Process one JPEG frame. Returns a fully populated FaceMetrics including
+        forehead_rgb and forehead_bbox_norm when a face is detected.
+        """
         nparr = np.frombuffer(jpeg_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         if frame is None:
@@ -62,18 +66,18 @@ class LivenessEngine:
         if not result.face_landmarks:
             return FaceMetrics(face_detected=False)
 
-        # Reject multiple faces
         if len(result.face_landmarks) > 1:
             return FaceMetrics(face_detected=False)
 
         landmarks = result.face_landmarks[0]
         h, w = frame.shape[:2]
 
-        yaw_proxy  = self._compute_yaw_proxy(landmarks)
+        yaw_proxy   = self._compute_yaw_proxy(landmarks)
         smile_score = self._compute_smile_score(result)
         texture_var, z_std, is_spoof = self._check_spoof(frame, landmarks, w, h)
+        forehead    = self.extract_forehead_rgb(frame, landmarks, w, h)
 
-        return FaceMetrics(
+        metrics = FaceMetrics(
             face_detected=True,
             yaw_proxy=round(yaw_proxy, 4),
             smile_score=round(smile_score, 4),
@@ -81,6 +85,14 @@ class LivenessEngine:
             landmark_z_std=round(z_std, 6),
             is_spoof=is_spoof,
         )
+
+        if forehead is not None:
+            r, g, b, x1n, y1n, x2n, y2n = forehead
+            metrics.forehead_rgb      = [round(r, 1), round(g, 1), round(b, 1)]
+            metrics.forehead_bbox_norm = [round(x1n, 4), round(y1n, 4),
+                                           round(x2n, 4), round(y2n, 4)]
+
+        return metrics
 
     def _compute_yaw_proxy(self, landmarks) -> float:
         """
@@ -136,6 +148,75 @@ class LivenessEngine:
 
         is_spoof = (texture_var < SPOOF_TEXTURE_MIN) or (z_std < SPOOF_Z_STD_MIN)
         return texture_var, z_std, is_spoof
+
+    def extract_forehead_rgb(self, frame, landmarks, w: int, h: int):
+        """
+        Sample mean R, G, B from the forehead region — a thin strip just above
+        the eyebrows, sized relative to actual face dimensions.
+
+        Returns (r, g, b, x1_norm, y1_norm, x2_norm, y2_norm) or None.
+
+        Geometry rationale:
+          - WIDTH: use temple-to-temple distance (landmarks 127 ↔ 356), then
+            take the inner ~55%. This is the actual face width, not the much
+            smaller inner-brow distance we used before.
+          - HEIGHT: a strip starting just above the brow line and extending
+            upward by ~25% of the inter-ocular distance. This stays on skin
+            even when the user has bangs/heavy hair that covers most of the
+            upper forehead. Reaching all the way up to the forehead apex (10)
+            sampled hair on people with bangs and produced garbage signal.
+          - CENTER X: midpoint between the two pupils (landmarks 33 ↔ 263)
+            so the box stays centered even when the head yaws slightly.
+
+        Landmarks used:
+          127, 356 → left/right temples (face width)
+          33,  263 → left/right outer eye corners (centering + scale)
+          107, 336 → top of left/right eyebrow (vertical anchor)
+        """
+        lm_temple_l = landmarks[127]
+        lm_temple_r = landmarks[356]
+        lm_eye_l    = landmarks[33]
+        lm_eye_r    = landmarks[263]
+        lm_brow_l   = landmarks[107]
+        lm_brow_r   = landmarks[336]
+
+        # Pixel coords
+        temple_xl = lm_temple_l.x * w
+        temple_xr = lm_temple_r.x * w
+        eye_xl    = lm_eye_l.x * w
+        eye_xr    = lm_eye_r.x * w
+
+        face_width   = abs(temple_xr - temple_xl)
+        if face_width < 30:  # Face too small / too far away
+            return None
+
+        eye_dist     = abs(eye_xr - eye_xl)
+        center_x_pix = (eye_xl + eye_xr) / 2.0
+
+        # Width: 55% of face width, centered between the eyes
+        half_w = face_width * 0.275
+
+        # Vertical strip: from just above the brows, going up by ~30% of eye dist
+        brow_y_pix = ((lm_brow_l.y + lm_brow_r.y) / 2.0) * h
+        strip_h    = max(8.0, eye_dist * 0.30)
+
+        x1 = int(max(0, center_x_pix - half_w))
+        x2 = int(min(w, center_x_pix + half_w))
+        y2 = int(max(0, brow_y_pix - 4))            # 4px gap above the brow
+        y1 = int(max(0, y2 - strip_h))
+
+        if x2 - x1 < 8 or y2 - y1 < 4:
+            return None
+
+        roi = frame[y1:y2, x1:x2]
+        if roi.size == 0:
+            return None
+
+        b_mean = float(roi[:, :, 0].mean())
+        g_mean = float(roi[:, :, 1].mean())
+        r_mean = float(roi[:, :, 2].mean())
+
+        return r_mean, g_mean, b_mean, x1 / w, y1 / h, x2 / w, y2 / h
 
     def close(self):
         self.detector.close()

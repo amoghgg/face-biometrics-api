@@ -2,11 +2,16 @@
 __pycache__/
 *.py[cod]
 *.pyo
+*.egg-info/
+dist/
+build/
 .env
+.env.*
 venv/
 .venv/
+env/
 
-# Models & large binaries (too large for git)
+# Models & large binaries (download separately — see README)
 backend/face_landmarker.task
 backend/insightface_models/
 
@@ -16,6 +21,18 @@ backend/face_db/
 
 # Logs
 *.log
+*.log.*
 
-# macOS
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Node (frontend tooling if added later)
+node_modules/
+.expo/

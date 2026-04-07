@@ -8,3 +8,5 @@ python-jose[cryptography]>=3.3.0
 insightface>=0.7.3
 onnxruntime>=1.17.0
 faiss-cpu>=1.8.0
+scipy>=1.12.0
+python-multipart>=0.0.9

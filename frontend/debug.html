@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>rPPG Debug Console</title>
+  <style>
+    :root {
+      --bg:        #07090e;
+      --card:      #0c0f18;
+      --card2:     #111520;
+      --border:    #1c2333;
+      --border2:   #263044;
+      --green:     #22c55e;
+      --green-dim: #0d2b1a;
+      --blue:      #3b82f6;
+      --blue-dim:  #0d1f3e;
+      --amber:     #f59e0b;
+      --red:       #ef4444;
+      --red-dim:   #2d1010;
+      --txt:       #e2e8f0;
+      --txt2:      #64748b;
+      --txt3:      #94a3b8;
+      --mono:      'JetBrains Mono', 'Fira Code', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--txt);
+    }
+
+    body {
+      display: grid;
+      grid-template-rows: 48px 1fr 64px;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
+      flex-shrink: 0;
+    }
+    .logo {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--txt3);
+    }
+    .logo em { color: var(--green); font-style: normal; }
+    .h-sep { flex: 1; }
+    #session-label {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: var(--txt2);
+    }
+    #session-label b { color: var(--txt3); }
+    #status-badge {
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      transition: all 0.3s;
+      border: 1px solid transparent;
+    }
+    .badge-idle     { background: #1a2030; color: var(--txt2); border-color: var(--border2); }
+    .badge-active   { background: var(--blue-dim); color: var(--blue); border-color: var(--blue); }
+    .badge-live     { background: var(--green-dim); color: var(--green); border-color: var(--green); }
+    .badge-failed   { background: var(--red-dim); color: var(--red); border-color: var(--red); }
+    .badge-complete { background: var(--green-dim); color: var(--green); border-color: var(--green); }
+
+    /* ── Main 3-col grid ── */
+    main {
+      display: grid;
+      grid-template-columns: 340px 1fr 240px;
+      gap: 1px;
+      background: var(--border);
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    .col {
+      background: var(--card);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .col-header {
+      padding: 10px 16px 8px;
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--txt2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    /* ── Camera column ── */
+    .camera-col { gap: 0; }
+
+    .camera-wrap {
+      position: relative;
+      flex-shrink: 0;
+      overflow: hidden;
+      background: #000;
+    }
+
+    #video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1);
+      display: block;
+    }
+
+    #overlay-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    /* No face overlay */
+    #no-face-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(7, 9, 14, 0.7);
+      gap: 8px;
+      backdrop-filter: blur(2px);
+    }
+    #no-face-overlay.visible { display: flex; }
+    .no-face-icon { font-size: 2rem; }
+    .no-face-text {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--amber);
+    }
+
+    /* Skin swatch */
+    .swatch-section {
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .swatch-label { font-size: 0.65rem; color: var(--txt2); white-space: nowrap; }
+    #color-swatch {
+      width: 32px;
+      height: 32px;
+      border-radius: 6px;
+      border: 1px solid var(--border2);
+      background: #1a2030;
+      transition: background 0.1s;
+      flex-shrink: 0;
+    }
+    .rgb-vals {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      line-height: 1.7;
+    }
+    .rgb-r { color: #f87171; }
+    .rgb-g { color: var(--green); }
+    .rgb-b { color: #60a5fa; }
+
+    /* Sampling status */
+    .sample-status {
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.65rem;
+      color: var(--txt2);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    #sample-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-weight: 600;
+      font-size: 0.65rem;
+    }
+    .pill-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--txt2);
+    }
+    .pill-dot.sampling { background: var(--green); animation: pulse-dot 1s infinite; }
+    .pill-dot.paused   { background: var(--amber); }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    /* Progress bar */
+    .sample-bar-wrap {
+      height: 3px;
+      background: var(--border2);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    #sample-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--green);
+      transition: width 0.3s;
+    }
+
+    /* ── rPPG column ── */
+    .rppg-col { padding: 0; }
+
+    /* Scan phase overlay (inside camera-wrap) */
+    #scan-overlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #scan-overlay.active { display: block; }
+    .scan-bg {
+      position: absolute;
+      inset: 0;
+      background: rgba(34, 197, 94, 0.04);
+    }
+    .scan-line {
+      position: absolute;
+      left: 0; right: 0; top: 0;
+      height: 4px;
+      background: linear-gradient(to bottom, transparent, rgba(34,197,94,0.9) 50%, transparent);
+      box-shadow: 0 0 18px rgba(34,197,94,0.8), 0 0 40px rgba(34,197,94,0.3);
+      animation: scan-sweep 2.5s cubic-bezier(0.4, 0, 0.6, 1) forwards;
+    }
+    @keyframes scan-sweep {
+      0%   { top: 0%;   opacity: 1; }
+      85%  { opacity: 1; }
+      100% { top: 100%; opacity: 0; }
+    }
+    /* Corner brackets */
+    .corner {
+      position: absolute;
+      width: 22px;
+      height: 22px;
+    }
+    .corner::before, .corner::after {
+      content: '';
+      position: absolute;
+      background: #22c55e;
+      box-shadow: 0 0 8px #22c55e;
+    }
+    .corner::before { width: 100%; height: 2px; top: 0; left: 0; }
+    .corner::after  { width: 2px; height: 100%; top: 0; left: 0; }
+    .corner-tl { top: 14px;    left: 14px; }
+    .corner-tr { top: 14px;    right: 14px;  transform: scaleX(-1); }
+    .corner-bl { bottom: 14px; left: 14px;   transform: scaleY(-1); }
+    .corner-br { bottom: 14px; right: 14px;  transform: scale(-1); }
+    .scan-label {
+      position: absolute;
+      bottom: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #22c55e;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      text-shadow: 0 0 12px #22c55e;
+      white-space: nowrap;
+    }
+
+    /* ── Verdict hero ── */
+    .verdict-hero {
+      padding: 22px 20px 18px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      transition: background 0.5s;
+    }
+    #verdict-icon {
+      font-size: 2.8rem;
+      line-height: 1;
+      color: var(--txt2);
+      transition: color 0.4s, transform 0.3s;
+      flex-shrink: 0;
+      width: 52px;
+      text-align: center;
+    }
+    .verdict-text { display: flex; flex-direction: column; gap: 5px; }
+    #verdict-label {
+      font-family: var(--mono);
+      font-size: 1.6rem;
+      font-weight: 700;
+      line-height: 1;
+      color: var(--txt2);
+      transition: color 0.4s;
+    }
+    #verdict-sub {
+      font-size: 0.75rem;
+      color: var(--txt2);
+      letter-spacing: 0.03em;
+    }
+
+    /* Verdict states */
+    .verdict-hero.idle       #verdict-icon  { color: var(--txt2); }
+    .verdict-hero.scanning   #verdict-icon  { color: var(--blue); animation: spin-slow 3s linear infinite; }
+    @keyframes spin-slow { to { transform: rotate(360deg); } }
+    .verdict-hero.scanning   #verdict-label { color: var(--blue); }
+    .verdict-hero.collecting #verdict-icon  { color: var(--amber); }
+    .verdict-hero.collecting #verdict-label { color: var(--amber); }
+    .verdict-hero.real { background: linear-gradient(135deg, var(--green-dim) 0%, transparent 60%); }
+    .verdict-hero.real       #verdict-icon  { color: var(--green); font-size: 3rem; }
+    .verdict-hero.real       #verdict-label { color: var(--green); font-size: 1.9rem; }
+    .verdict-hero.real       #verdict-sub   { color: rgba(34,197,94,0.7); }
+    .verdict-hero.synthetic { background: linear-gradient(135deg, var(--red-dim) 0%, transparent 60%); }
+    .verdict-hero.synthetic  #verdict-icon  { color: var(--red); }
+    .verdict-hero.synthetic  #verdict-label { color: var(--red); }
+    .verdict-hero.synthetic  #verdict-sub   { color: rgba(239,68,68,0.7); }
+
+    /* Secondary BPM (shown only for real verdict) */
+    #bpm-row-secondary {
+      padding: 8px 20px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      font-family: var(--mono);
+    }
+    #bpm-secondary-val {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--green);
+    }
+    .bpm-secondary-unit {
+      font-size: 0.65rem;
+      color: var(--txt2);
+      margin-left: 6px;
+    }
+
+    /* Confidence */
+    .conf-section {
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .conf-label { font-size: 0.65rem; color: var(--txt2); width: 70px; flex-shrink: 0; }
+    .conf-track {
+      flex: 1;
+      height: 5px;
+      background: var(--border2);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    #conf-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--green);
+      border-radius: 3px;
+      transition: width 0.5s, background 0.3s;
+    }
+    #conf-pct {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      color: var(--txt3);
+      width: 38px;
+      text-align: right;
+    }
+
+    /* Waveform */
+    .wave-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      padding: 12px 20px;
+      gap: 8px;
+    }
+    .wave-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .wave-title {
+      font-size: 0.6rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--txt2);
+    }
+    #wave-fps {
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      color: var(--txt2);
+    }
+    #waveform-canvas {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      display: block;
+    }
+
+    /* ── Metrics column ── */
+    .metrics-col {
+      padding: 12px;
+      gap: 14px;
+      overflow-y: auto;
+    }
+
+    .metric-group { display: flex; flex-direction: column; gap: 6px; }
+    .group-title {
+      font-size: 0.58rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--txt2);
+      padding-bottom: 5px;
+      border-bottom: 1px solid var(--border);
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1px 0;
+    }
+    .mk { font-family: var(--mono); font-size: 0.65rem; color: var(--txt2); }
+    .mv {
+      font-family: var(--mono);
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: var(--txt3);
+      transition: color 0.25s;
+    }
+    .mv.good { color: var(--green); }
+    .mv.bad  { color: var(--red); }
+    .mv.warn { color: var(--amber); }
+
+    /* Yaw bar */
+    .yaw-track {
+      position: relative;
+      height: 20px;
+      background: var(--card2);
+      border-radius: 4px;
+      margin-top: 2px;
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+    .yaw-mid {
+      position: absolute;
+      left: 50%;
+      top: 0; bottom: 0;
+      width: 1px;
+      background: var(--border2);
+    }
+    #yaw-thumb {
+      position: absolute;
+      top: 4px; bottom: 4px;
+      width: 5px;
+      border-radius: 3px;
+      background: var(--blue);
+      left: 50%;
+      transform: translateX(-50%);
+      transition: left 0.08s;
+    }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      background: var(--card);
+      padding: 0 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .steps { display: flex; gap: 8px; }
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border2);
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--txt2);
+      background: transparent;
+      transition: all 0.2s;
+    }
+    .step.active { border-color: var(--blue); color: var(--blue); background: var(--blue-dim); }
+    .step.done   { border-color: var(--green); color: var(--green); background: var(--green-dim); }
+
+    #feedback-text {
+      flex: 1;
+      font-size: 0.78rem;
+      color: var(--txt3);
+      text-align: center;
+    }
+    #feedback-text.warn { color: var(--amber); }
+    #feedback-text.good { color: var(--green); }
+
+    #start-btn {
+      padding: 8px 22px;
+      border-radius: 6px;
+      border: none;
+      background: var(--blue);
+      color: #fff;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    #start-btn:hover { background: #2563eb; }
+    #start-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    #token-area {
+      display: none;
+      font-family: var(--mono);
+      font-size: 0.6rem;
+      color: var(--green);
+      max-width: 280px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">rPPG <em>Liveness</em> Debug</div>
+  <div class="h-sep"></div>
+  <div id="session-label">session <b id="sid">—</b></div>
+  <div id="status-badge" class="badge-idle">IDLE</div>
+</header>
+
+<!-- Main -->
+<main>
+
+  <!-- Left: Camera -->
+  <div class="col camera-col">
+    <div class="col-header">Camera Feed</div>
+
+    <div class="camera-wrap" id="camera-wrap" style="flex:1;">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="overlay-canvas"></canvas>
+      <!-- Scan phase overlay -->
+      <div id="scan-overlay">
+        <div class="scan-bg"></div>
+        <div class="scan-line"></div>
+        <div class="corner corner-tl"></div>
+        <div class="corner corner-tr"></div>
+        <div class="corner corner-bl"></div>
+        <div class="corner corner-br"></div>
+        <div class="scan-label">Scanning face…</div>
+      </div>
+      <!-- No-face overlay -->
+      <div id="no-face-overlay">
+        <div class="no-face-icon">👤</div>
+        <div class="no-face-text">Move into the frame</div>
+      </div>
+    </div>
+
+    <div class="swatch-section">
+      <div class="swatch-label">Forehead ROI</div>
+      <div id="color-swatch"></div>
+      <div class="rgb-vals" id="rgb-vals">
+        <div><span class="rgb-r">R</span> —</div>
+        <div><span class="rgb-g">G</span> —</div>
+        <div><span class="rgb-b">B</span> —</div>
+      </div>
+    </div>
+
+    <div class="sample-status">
+      <div id="sample-pill">
+        <div class="pill-dot" id="pill-dot"></div>
+        <span id="pill-text">Not started</span>
+      </div>
+      <span id="sample-count-label" style="font-family:var(--mono);font-size:0.65rem;">0 / 75 samples</span>
+    </div>
+    <div class="sample-bar-wrap">
+      <div id="sample-bar"></div>
+    </div>
+  </div>
+
+  <!-- Center: Liveness Verdict -->
+  <div class="col rppg-col">
+    <div class="col-header">Liveness Detection — rPPG Analysis</div>
+
+    <!-- Verdict hero — the primary output -->
+    <div class="verdict-hero idle" id="verdict-hero">
+      <div id="verdict-icon">◎</div>
+      <div class="verdict-text">
+        <div id="verdict-label">Not started</div>
+        <div id="verdict-sub">Click Start to begin</div>
+      </div>
+    </div>
+
+    <!-- Secondary BPM row — only shown when verdict is REAL -->
+    <div id="bpm-row-secondary" style="display:none;">
+      <span id="bpm-secondary-val">—</span>
+      <span class="bpm-secondary-unit">BPM · pulse confirmed</span>
+    </div>
+
+    <div class="conf-section">
+      <div class="conf-label">Signal strength</div>
+      <div class="conf-track"><div id="conf-bar"></div></div>
+      <div id="conf-pct">—</div>
+    </div>
+
+    <div class="wave-section">
+      <div class="wave-header">
+        <span class="wave-title">Pulse evidence · green channel</span>
+        <span id="wave-fps"></span>
+      </div>
+      <canvas id="waveform-canvas"></canvas>
+    </div>
+  </div>
+
+  <!-- Right: Metrics -->
+  <div class="col metrics-col">
+    <div class="col-header">Metrics</div>
+
+    <div class="metric-group">
+      <div class="group-title">Head Pose</div>
+      <div class="metric-row"><span class="mk">yaw_proxy</span><span id="m-yaw" class="mv">—</span></div>
+      <div class="metric-row"><span class="mk">smile_score</span><span id="m-smile" class="mv">—</span></div>
+      <div class="yaw-track"><div class="yaw-mid"></div><div id="yaw-thumb"></div></div>
+    </div>
+
+    <div class="metric-group">
+      <div class="group-title">Spoof Detection</div>
+      <div class="metric-row"><span class="mk">texture_var</span><span id="m-tex" class="mv">—</span></div>
+      <div class="metric-row"><span class="mk">z_std</span><span id="m-zstd" class="mv">—</span></div>
+      <div class="metric-row"><span class="mk">is_spoof</span><span id="m-spoof" class="mv">—</span></div>
+    </div>
+
+    <div class="metric-group">
+      <div class="group-title">rPPG</div>
+      <div class="metric-row"><span class="mk">samples</span><span id="m-samples" class="mv">—</span></div>
+      <div class="metric-row"><span class="mk">ready</span><span id="m-ready" class="mv">—</span></div>
+      <div class="metric-row"><span class="mk">bpm</span><span id="m-bpm" class="mv">—</span></div>
+      <div class="metric-row"><span class="mk">confidence</span><span id="m-conf" class="mv">—</span></div>
+      <div class="metric-row"><span class="mk">is_live</span><span id="m-live" class="mv">—</span></div>
+      <div class="metric-row"><span class="mk">sampling</span><span id="m-sampling" class="mv">—</span></div>
+    </div>
+
+    <div class="metric-group">
+      <div class="group-title">Frame</div>
+      <div class="metric-row"><span class="mk">face_detected</span><span id="m-face" class="mv">—</span></div>
+      <div class="metric-row"><span class="mk">challenge</span><span id="m-challenge" class="mv">—</span></div>
+      <div class="metric-row"><span class="mk">fps</span><span id="m-fps" class="mv">—</span></div>
+    </div>
+  </div>
+</main>
+
+<!-- Footer -->
+<footer>
+  <div class="steps">
+    <div class="step" id="step-0">← Left</div>
+    <div class="step" id="step-1">→ Right</div>
+    <div class="step" id="step-2">😊 Smile</div>
+  </div>
+  <div id="feedback-text">Click Start to begin</div>
+  <div id="token-area"></div>
+  <button id="start-btn">▶ Start</button>
+</footer>
+
+<!-- Hidden capture canvas required by camera.js -->
+<canvas id="canvas" style="display:none"></canvas>
+<script src="camera.js"></script>
+<script>
+const API = "http://localhost:8000";
+const WS  = "ws://localhost:8000";
+const MIN_SAMPLES = 75;
+const WAVE_LEN    = 220;
+
+// ── State ─────────────────────────────────────────
+let ws = null, sessionId = null;
+let greenBuf   = new Array(WAVE_LEN).fill(null);
+let pausedBuf  = new Array(WAVE_LEN).fill(false);  // track paused frames for grey-out
+let pulseTimer = null;
+let frameCount = 0, fpsTimer = null;
+
+// ── DOM ───────────────────────────────────────────
+const $ = id => document.getElementById(id);
+// `video` is already declared by camera.js in the same scope — don't redeclare
+const overlayCanvas = $("overlay-canvas");
+const overlayCtx  = overlayCanvas.getContext("2d");
+const waveCanvas  = $("waveform-canvas");
+const waveCtx     = waveCanvas.getContext("2d");
+const noFaceEl    = $("no-face-overlay");
+
+// ── Resize waveform canvas to physical pixels ─────
+function resizeWave() {
+  const r = waveCanvas.getBoundingClientRect();
+  waveCanvas.width  = Math.round(r.width  * devicePixelRatio);
+  waveCanvas.height = Math.round(r.height * devicePixelRatio);
+}
+window.addEventListener("resize", resizeWave);
+setTimeout(resizeWave, 100);
+
+// ── Overlay: account for object-fit:cover ─────────
+function syncOverlay() {
+  const wrap = $("camera-wrap");
+  overlayCanvas.width  = wrap.clientWidth;
+  overlayCanvas.height = wrap.clientHeight;
+}
+
+function videoCoverRect() {
+  const dW = overlayCanvas.width, dH = overlayCanvas.height;
+  const vW = video.videoWidth,    vH = video.videoHeight;
+  if (!vW || !vH) return null;
+  const vAR = vW / vH, dAR = dW / dH;
+  let scale, ox, oy;
+  if (vAR > dAR) {          // video wider → fit height, crop width
+    scale = dH / vH;
+    ox = (dW - vW * scale) / 2;
+    oy = 0;
+  } else {                  // video taller → fit width, crop height
+    scale = dW / vW;
+    ox = 0;
+    oy = (dH - vH * scale) / 2;
+  }
+  return { scale, ox, oy, vW, vH };
+}
+
+function drawROI(bboxNorm, rgb, sampling) {
+  syncOverlay();
+  const W = overlayCanvas.width, H = overlayCanvas.height;
+  overlayCtx.clearRect(0, 0, W, H);
+  if (!bboxNorm) return;
+
+  const r = videoCoverRect();
+  if (!r) return;
+
+  // bbox_norm is in the natural (pre-mirror) frame.
+  // The video is CSS-flipped (scaleX(-1)), so mirror x.
+  const x1 = r.ox + (1 - bboxNorm[2]) * r.vW * r.scale;
+  const x2 = r.ox + (1 - bboxNorm[0]) * r.vW * r.scale;
+  const y1 = r.oy + bboxNorm[1] * r.vH * r.scale;
+  const y2 = r.oy + bboxNorm[3] * r.vH * r.scale;
+  const bw = x2 - x1, bh = y2 - y1;
+
+  const color = sampling ? "#22c55e" : "#f59e0b";
+
+  overlayCtx.save();
+  overlayCtx.shadowColor = color;
+  overlayCtx.shadowBlur  = 10;
+  overlayCtx.strokeStyle = color;
+  overlayCtx.lineWidth   = 2;
+  overlayCtx.strokeRect(x1, y1, bw, bh);
+  overlayCtx.restore();
+
+  if (rgb) {
+    overlayCtx.fillStyle = `rgba(${Math.round(rgb[0])},${Math.round(rgb[1])},${Math.round(rgb[2])},0.18)`;
+    overlayCtx.fillRect(x1, y1, bw, bh);
+  }
+
+  overlayCtx.fillStyle = color;
+  overlayCtx.font = "bold 10px monospace";
+  const label = sampling ? "FOREHEAD ROI" : "ROI · PAUSED";
+  overlayCtx.fillText(label, x1 + 3, y1 > 14 ? y1 - 4 : y2 + 12);
+}
+
+// ── Waveform ──────────────────────────────────────
+function pushSample(g, paused) {
+  greenBuf.push(g);  pausedBuf.push(paused);
+  if (greenBuf.length  > WAVE_LEN) greenBuf.shift();
+  if (pausedBuf.length > WAVE_LEN) pausedBuf.shift();
+  drawWave();
+}
+
+function drawWave() {
+  const dpr = devicePixelRatio;
+  const W   = waveCanvas.width  / dpr;
+  const H   = waveCanvas.height / dpr;
+
+  waveCtx.save();
+  waveCtx.scale(dpr, dpr);
+
+  // Background
+  waveCtx.fillStyle = "#070a0f";
+  waveCtx.fillRect(0, 0, W, H);
+
+  // Grid
+  waveCtx.strokeStyle = "#131a25";
+  waveCtx.lineWidth = 1;
+  for (let i = 1; i < 4; i++) {
+    const y = (H / 4) * i;
+    waveCtx.beginPath(); waveCtx.moveTo(0, y); waveCtx.lineTo(W, y); waveCtx.stroke();
+  }
+
+  const valid = greenBuf.filter(v => v !== null);
+  if (valid.length < 4) {
+    waveCtx.fillStyle = "#1e2736";
+    waveCtx.font = "12px sans-serif";
+    waveCtx.textAlign = "center";
+    waveCtx.fillText("Waiting for signal…", W / 2, H / 2);
+    waveCtx.textAlign = "left";
+    waveCtx.restore();
+    return;
+  }
+
+  let min = Infinity, max = -Infinity;
+  for (const v of valid) { if (v < min) min = v; if (v > max) max = v; }
+  const range = max - min || 1;
+  const pad = 12;
+  const step = W / (WAVE_LEN - 1);
+
+  // Draw segments: green when sampling, amber when paused
+  let i = 0;
+  while (i < WAVE_LEN) {
+    if (greenBuf[i] === null) { i++; continue; }
+
+    const isPaused = pausedBuf[i];
+    waveCtx.beginPath();
+    waveCtx.strokeStyle = isPaused ? "#92400e" : "#22c55e";
+    waveCtx.lineWidth   = isPaused ? 1.5 : 2;
+
+    let j = i;
+    while (j < WAVE_LEN && greenBuf[j] !== null && pausedBuf[j] === isPaused) {
+      const x = j * step;
+      const y = H - pad - ((greenBuf[j] - min) / range) * (H - 2 * pad);
+      if (j === i) waveCtx.moveTo(x, y);
+      else          waveCtx.lineTo(x, y);
+      j++;
+    }
+
+    if (!isPaused) {
+      // Glow for active signal
+      waveCtx.save();
+      waveCtx.shadowColor = "#22c55e";
+      waveCtx.shadowBlur  = 8;
+      waveCtx.stroke();
+      waveCtx.restore();
+    } else {
+      waveCtx.stroke();
+    }
+
+    i = j;
+  }
+
+  // Range labels
+  waveCtx.fillStyle = "#2d3f55";
+  waveCtx.font = "9px monospace";
+  waveCtx.fillText(`G ${Math.round(max)}`, 4, pad + 2);
+  waveCtx.fillText(`G ${Math.round(min)}`, 4, H - pad + 10);
+
+  waveCtx.restore();
+}
+
+// ── Phase management ──────────────────────────────
+// Phases: 'idle' | 'scan' | 'collect' | 'real' | 'synthetic'
+let phase = 'idle';
+let scanTimer = null;
+
+function setVerdictPhase(p) {
+  phase = p;
+  const hero = $("verdict-hero");
+  // Remove all phase classes
+  hero.classList.remove("idle", "scanning", "collecting", "real", "synthetic");
+
+  if (p === 'idle') {
+    hero.classList.add("idle");
+    $("verdict-icon").textContent = "◎";
+    $("verdict-label").textContent = "Not started";
+    $("verdict-sub").textContent = "Click Start to begin";
+    $("bpm-row-secondary").style.display = "none";
+  } else if (p === 'scan') {
+    hero.classList.add("scanning");
+    $("verdict-icon").textContent = "◉";
+    $("verdict-label").textContent = "Scanning…";
+    $("verdict-sub").textContent = "Verifying face geometry";
+    $("bpm-row-secondary").style.display = "none";
+  } else if (p === 'collect') {
+    hero.classList.add("collecting");
+    $("verdict-icon").textContent = "◌";
+    $("verdict-label").textContent = "Reading pulse";
+    $("verdict-sub").textContent = "Stay still and face forward";
+    $("bpm-row-secondary").style.display = "none";
+  } else if (p === 'real') {
+    hero.classList.add("real");
+    $("verdict-icon").textContent = "✓";
+    $("verdict-label").textContent = "REAL PERSON";
+    $("verdict-sub").textContent = "Pulse signal confirmed";
+  } else if (p === 'synthetic') {
+    hero.classList.add("synthetic");
+    $("verdict-icon").textContent = "✗";
+    $("verdict-label").textContent = "SYNTHETIC / AI";
+    $("verdict-sub").textContent = "No pulse signal detected";
+    $("bpm-row-secondary").style.display = "none";
+  }
+}
+
+function startScan() {
+  // Show the CSS scan animation on the camera overlay
+  const scanEl = $("scan-overlay");
+  scanEl.classList.remove("active");
+  // Force reflow to restart CSS animation
+  void scanEl.offsetWidth;
+  scanEl.classList.add("active");
+  setVerdictPhase('scan');
+
+  if (scanTimer) clearTimeout(scanTimer);
+  scanTimer = setTimeout(() => {
+    scanEl.classList.remove("active");
+    setVerdictPhase('collect');
+  }, 2500);
+}
+
+// ── Helpers ───────────────────────────────────────
+function mv(id, text, cls) {
+  const el = $(id);
+  el.textContent = text;
+  el.className = "mv" + (cls ? " " + cls : "");
+}
+function badge(cls) {
+  $("status-badge").className = cls;
+  $("status-badge").textContent = cls.replace("badge-", "").toUpperCase();
+}
+function feedback(text, type) {
+  const el = $("feedback-text");
+  el.textContent = text;
+  el.className = type ? type : "";
+}
+
+// ── Message handler ───────────────────────────────
+function onMessage(data) {
+  frameCount++;
+  const m = data.metrics || {};
+
+  // No face overlay
+  const noFace = !m.face_detected;
+  noFaceEl.classList.toggle("visible", noFace);
+
+  // Feedback text
+  const fb = data.feedback || "";
+  feedback(fb, fb.includes("No face") ? "warn" : fb.includes("complete") ? "good" : "");
+
+  // Challenge steps
+  updateSteps(data.challenge_index, data.challenge);
+  mv("m-challenge", data.challenge || "—");
+
+  // Head pose
+  const yaw = m.yaw_proxy ?? null;
+  mv("m-yaw", yaw !== null ? yaw.toFixed(3) : "—");
+  mv("m-smile", m.smile_score !== undefined ? m.smile_score.toFixed(3) : "—",
+     m.smile_score > 0.5 ? "good" : null);
+  if (yaw !== null) {
+    const pct = 50 + Math.max(-1, Math.min(1, yaw)) * 40;
+    $("yaw-thumb").style.left = pct + "%";
+  }
+
+  // Spoof
+  const tex = m.texture_variance;
+  mv("m-tex", tex !== undefined ? tex.toFixed(1) : "—", tex > 50 ? "good" : tex !== undefined ? "bad" : null);
+  const zs  = m.landmark_z_std;
+  mv("m-zstd", zs !== undefined ? zs.toFixed(5) : "—", zs > 0.008 ? "good" : zs !== undefined ? "bad" : null);
+  mv("m-spoof", m.is_spoof !== undefined ? String(m.is_spoof) : "—", m.is_spoof ? "bad" : "good");
+
+  // Face
+  mv("m-face", m.face_detected !== undefined ? String(m.face_detected) : "—", m.face_detected ? "good" : "bad");
+
+  // rPPG sampling indicator
+  const sampling = m.rppg_sampling === true;
+  const samples  = m.rppg_samples ?? 0;
+  const dot = $("pill-dot");
+  const pillTxt = $("pill-text");
+  if (!m.face_detected) {
+    dot.className = "pill-dot";
+    pillTxt.textContent = "No face";
+  } else if (sampling) {
+    dot.className = "pill-dot sampling";
+    pillTxt.textContent = "Sampling";
+  } else {
+    dot.className = "pill-dot paused";
+    pillTxt.textContent = m.rppg_ready ? "Paused (movement)" : "Paused (head turn)";
+  }
+  $("sample-count-label").textContent = `${samples} / ${MIN_SAMPLES} samples`;
+  $("sample-bar").style.width = Math.min(100, (samples / MIN_SAMPLES) * 100) + "%";
+
+  // rPPG metrics
+  mv("m-samples", samples);
+  mv("m-ready",    m.rppg_ready ? "true" : "false", m.rppg_ready ? "good" : "warn");
+  mv("m-sampling", sampling ? "true" : "false", sampling ? "good" : "warn");
+
+  const bpm  = m.rppg_bpm;
+  const conf = m.rppg_confidence;
+  const live = m.rppg_is_live;
+  const ready = m.rppg_ready;
+
+  mv("m-bpm",  bpm  !== null && bpm  !== undefined ? bpm.toFixed(1)        : "—",
+     bpm >= 45 && bpm <= 160 ? "good" : bpm !== undefined ? "bad" : null);
+  mv("m-conf", conf !== null && conf !== undefined ? (conf*100).toFixed(1)+"%" : "—");
+  mv("m-live", live === true ? "true" : live === false ? "false" : "—",
+     live === true ? "good" : live === false ? "bad" : null);
+
+  // ── Verdict display ──────────────────────────────
+  const verdict = m.rppg_verdict || "pending";
+
+  // Update sample count in collect phase
+  if (phase === 'collect' || phase === 'scan') {
+    $("verdict-sub").textContent = `${samples} / ${MIN_SAMPLES} samples collected`;
+  }
+
+  // Transition to final verdict once backend reports one
+  if (verdict === "real" && phase !== "real") {
+    setVerdictPhase("real");
+    // Show secondary BPM as supporting evidence
+    if (bpm) {
+      $("bpm-secondary-val").textContent = Math.round(bpm);
+      $("bpm-row-secondary").style.display = "block";
+    }
+  } else if (verdict === "synthetic" && phase !== "synthetic") {
+    setVerdictPhase("synthetic");
+  }
+
+  // Confidence bar (show once ready)
+  if (ready && conf !== null && conf !== undefined) {
+    $("conf-bar").style.width = (conf * 100) + "%";
+    $("conf-bar").style.background = verdict === "real" ? "var(--green)" : "var(--amber)";
+    $("conf-pct").textContent = (conf * 100).toFixed(1) + "%";
+  } else if (!ready) {
+    $("conf-bar").style.width = "0%";
+    $("conf-pct").textContent = "—";
+  }
+
+  // Skin swatch + waveform
+  if (m.forehead_rgb) {
+    const [r, g, b] = m.forehead_rgb;
+    $("color-swatch").style.background = `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+    $("rgb-vals").innerHTML =
+      `<div><span class="rgb-r">R</span> ${Math.round(r)}</div>` +
+      `<div><span class="rgb-g">G</span> ${Math.round(g)}</div>` +
+      `<div><span class="rgb-b">B</span> ${Math.round(b)}</div>`;
+    pushSample(g, !sampling);
+  }
+
+  // Overlay ROI box
+  if (m.forehead_bbox_norm) {
+    drawROI(m.forehead_bbox_norm, m.forehead_rgb, sampling);
+  } else {
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  }
+
+  // Session end states
+  if (data.challenge === "COMPLETE") {
+    badge("badge-complete");
+    feedback("✓ Verification complete!", "good");
+    if (data.liveness_token) {
+      $("token-area").style.display = "block";
+      $("token-area").textContent = "TOKEN: " + data.liveness_token;
+    }
+    finish("▶ Start Again");
+    return;
+  }
+  if (data.challenge === "FAILED") {
+    badge("badge-failed");
+    finish("▶ Try Again");
+    return;
+  }
+
+  if (m.face_detected) badge("badge-live");
+}
+
+// ── Challenge steps ───────────────────────────────
+function updateSteps(idx, challenge) {
+  [0, 1, 2].forEach(i => {
+    const el = $("step-" + i);
+    el.classList.remove("active", "done");
+    if (i < idx) el.classList.add("done");
+    else if (i === idx && challenge !== "COMPLETE" && challenge !== "FAILED")
+      el.classList.add("active");
+  });
+}
+
+// ── Session lifecycle ─────────────────────────────
+$("start-btn").addEventListener("click", async () => {
+  $("start-btn").disabled = true;
+  $("token-area").style.display = "none";
+  greenBuf  = new Array(WAVE_LEN).fill(null);
+  pausedBuf = new Array(WAVE_LEN).fill(false);
+  drawWave();
+  [0,1,2].forEach(i => $("step-"+i).classList.remove("active","done"));
+  $("color-swatch").style.background = "#1a2030";
+  $("rgb-vals").innerHTML = '<div><span class="rgb-r">R</span> —</div><div><span class="rgb-g">G</span> —</div><div><span class="rgb-b">B</span> —</div>';
+  overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  $("conf-bar").style.width = "0%";
+  $("conf-pct").textContent = "—";
+  $("bpm-row-secondary").style.display = "none";
+  noFaceEl.classList.remove("visible");
+  $("scan-overlay").classList.remove("active");
+  $("sample-bar").style.width = "0%";
+  setVerdictPhase("idle");
+
+  badge("badge-active");
+  feedback("Starting camera…");
+
+  try { await startCamera(); }
+  catch {
+    feedback("Camera access denied.", "warn");
+    badge("badge-idle");
+    $("start-btn").disabled = false;
+    return;
+  }
+
+  video.addEventListener("loadedmetadata", syncOverlay, { once: true });
+  syncOverlay();
+
+  let sid;
+  try {
+    const res = await fetch(`${API}/session/create`, { method: "POST" });
+    const d = await res.json();
+    sid = d.session_id;
+    sessionId = sid;
+    $("sid").textContent = sid.slice(0, 8) + "…";
+  } catch {
+    feedback("Server unreachable.", "warn");
+    badge("badge-idle");
+    stopCamera();
+    $("start-btn").disabled = false;
+    return;
+  }
+
+  // FPS counter
+  frameCount = 0;
+  if (fpsTimer) clearInterval(fpsTimer);
+  fpsTimer = setInterval(() => {
+    $("m-fps").textContent = frameCount;
+    $("wave-fps").textContent = frameCount + " fps";
+    frameCount = 0;
+  }, 1000);
+
+  ws = new WebSocket(`${WS}/ws/liveness/${sid}`);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => {
+    startCapture(buf => ws?.readyState === 1 && ws.send(buf), 15);
+    startScan();  // kick off the 2.5s face scan animation
+  };
+  ws.onmessage = ev => { try { onMessage(JSON.parse(ev.data)); } catch {} };
+  ws.onclose = () => stopCapture();
+  ws.onerror = () => { feedback("Connection error.", "warn"); finish("▶ Try Again"); };
+});
+
+function finish(label) {
+  stopCapture(); stopCamera();
+  if (fpsTimer) { clearInterval(fpsTimer); fpsTimer = null; }
+  if (ws) { ws.close(); ws = null; }
+  $("start-btn").textContent = label;
+  $("start-btn").disabled = false;
+}
+</script>
+</body>
+</html>

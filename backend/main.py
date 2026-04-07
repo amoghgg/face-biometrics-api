@@ -28,6 +28,8 @@ from session_manager import session_manager
 from face_recognition_engine import FaceRecognitionEngine, SIMILARITY_THRESHOLD
 from face_db import face_db
 from emotion_engine import blendshapes_to_emotions, dominant_emotion
+from rppg_engine import RPPGEngine
+from photo_validator import PhotoValidator
 
 # ── JWT config ────────────────────────────────────────────────────────────────
 JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production")
@@ -45,11 +47,76 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-engine    = LivenessEngine()
-rec_engine = FaceRecognitionEngine()
+engine         = LivenessEngine()
+rec_engine     = FaceRecognitionEngine()
+photo_validator = PhotoValidator()
+
+# Per-session rPPG engines — keyed by session_id, cleaned up on session end
+rppg_engines: dict[str, RPPGEngine] = {}
+
+# Per-session last ROI center position (normalized 0-1) — used to detect
+# inter-frame head movement and discard motion-corrupted samples.
+rppg_last_pos: dict[str, tuple[float, float]] = {}
 
 
 # ── REST endpoints ────────────────────────────────────────────────────────────
+
+# ── Photo validation endpoint ─────────────────────────────────────────────────
+# Accepts two modes:
+#   1. multipart/form-data with field "file"  — for file uploads from gallery
+#   2. JSON body { "image": "<base64>" }      — for camera frame captures
+#
+# Returns a full PhotoValidationResult as JSON.  The mobile app (or web onboarding
+# form) calls this before accepting a photo submission.
+
+from fastapi import UploadFile, File, Form
+from typing import Optional as Opt
+
+@app.post("/api/validate-photo")
+async def validate_photo(
+    file: Opt[UploadFile] = File(default=None),
+    image: Opt[str]       = Form(default=None),
+):
+    """
+    Validate a profile photo for onboarding.
+
+    Accepts either:
+      - multipart upload:  field name = "file"
+      - JSON/form field:   "image" = base64-encoded image (with or without
+                            the data:image/jpeg;base64, prefix)
+
+    Returns JSON with:
+      valid, rejection_reason, face_detected, face_count, single_face,
+      face_large_enough, face_centered, no_occlusion, not_ai_generated,
+      bbox, bbox_norm, age, gender, detection_score,
+      ai_probability, ai_signals
+    """
+    image_bytes: bytes | None = None
+
+    if file is not None:
+        image_bytes = await file.read()
+    elif image is not None:
+        # Strip data-URI prefix if present
+        b64 = image.split(",", 1)[-1] if "," in image else image
+        try:
+            image_bytes = base64.b64decode(b64)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid base64 image data.")
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="Provide either a 'file' upload or a base64 'image' field.",
+        )
+
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Empty image data.")
+
+    result = photo_validator.validate(image_bytes)
+
+    # Convert dataclass → dict for JSON serialisation
+    import dataclasses
+    return dataclasses.asdict(result)
+
 
 @app.post("/session/create", response_model=CreateSessionResponse)
 def create_session():
@@ -161,11 +228,70 @@ async def liveness_websocket(websocket: WebSocket, session_id: str):
             # Process frame with MediaPipe
             metrics = engine.process_frame(frame_bytes)
 
+            # Feed rPPG engine.
+            # We only accept a sample when the face is:
+            #   1. Detected and not a spoof
+            #   2. Roughly forward-facing (|yaw| < 0.15)
+            #      Head turns cause motion blur and ROI drift → huge artifacts.
+            #      This is the #1 source of garbage BPM readings.
+            rppg = rppg_engines.setdefault(session_id, RPPGEngine())
+            face_stable = (
+                metrics.face_detected
+                and not metrics.is_spoof
+                and abs(metrics.yaw_proxy) < 0.15
+                and metrics.forehead_rgb is not None
+                and metrics.forehead_bbox_norm is not None
+            )
+
+            # Position drift gate: if the forehead ROI center moved more than
+            # 2% of frame dimensions between consecutive frames, it's motion —
+            # reject the sample. This eliminates nodding / vertical movement
+            # artifacts that the yaw filter doesn't catch.
+            if face_stable:
+                bbox = metrics.forehead_bbox_norm
+                cx = (bbox[0] + bbox[2]) / 2.0
+                cy = (bbox[1] + bbox[3]) / 2.0
+                last_pos = rppg_last_pos.get(session_id)
+                if last_pos is not None:
+                    drift = ((cx - last_pos[0]) ** 2 + (cy - last_pos[1]) ** 2) ** 0.5
+                    if drift > 0.02:
+                        face_stable = False
+                if face_stable:
+                    rppg_last_pos[session_id] = (cx, cy)
+
+            if face_stable:
+                rppg.add_sample(*metrics.forehead_rgb)
+
+            metrics.rppg_sampling = face_stable
+            metrics.rppg_samples  = rppg.n_samples
+
+            # Attach rPPG result once buffer is ready
+            if rppg.ready:
+                bpm, conf = rppg.compute_bpm()
+                is_live_result = rppg.is_live()
+                metrics.rppg_bpm        = bpm
+                metrics.rppg_confidence = conf
+                metrics.rppg_ready      = True
+                metrics.rppg_is_live    = is_live_result
+                metrics.rppg_verdict    = (
+                    "real"      if is_live_result is True  else
+                    "synthetic" if is_live_result is False else
+                    "pending"
+                )
+
             current_challenge = session.current_challenge
 
             # Debug: log metrics every 15 frames
             if session.consecutive_count % 15 == 0:
                 print(f"[DEBUG] challenge={current_challenge.value} yaw={metrics.yaw_proxy:.3f} smile={metrics.smile_score:.3f} consec={session.consecutive_count}")
+
+            # No face — don't terminate, just guide the user back into frame
+            if not metrics.face_detected:
+                await _send_response(websocket, session_id, current_challenge,
+                                     session.challenge_index, False,
+                                     "No face detected — move into the frame",
+                                     metrics)
+                continue
 
             if metrics.is_spoof:
                 session.state = SessionState.FAILED
@@ -237,6 +363,9 @@ async def liveness_websocket(websocket: WebSocket, session_id: str):
             await websocket.send_text(json.dumps({"error": str(e)}))
         except Exception:
             pass
+    finally:
+        rppg_engines.pop(session_id, None)
+        rppg_last_pos.pop(session_id, None)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
