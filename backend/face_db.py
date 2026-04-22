@@ -5,6 +5,7 @@ Persists to disk so it survives server restarts.
 """
 import uuid
 import json
+import threading
 import numpy as np
 import faiss
 from pathlib import Path
@@ -28,7 +29,7 @@ class FaceRecord:
 
 class FaceDatabase:
     def __init__(self):
-        # FAISS flat inner-product index (cosine similarity on normalized vectors)
+        self._lock = threading.Lock()
         self.index = faiss.IndexFlatIP(EMBEDDING_DIM)
         self.records: list[FaceRecord] = []
         self._load()
@@ -36,68 +37,68 @@ class FaceDatabase:
     # ── Public API ────────────────────────────────────────────────────────────
 
     def register(self, name: str, embedding: np.ndarray, metadata: dict = {}) -> FaceRecord:
-        face_id = str(uuid.uuid4())
-        record = FaceRecord(face_id=face_id, name=name, metadata=metadata)
-        self.records.append(record)
-        self.index.add(embedding.reshape(1, -1).astype("float32"))
-        self._save()
-        return record
+        with self._lock:
+            face_id = str(uuid.uuid4())
+            record = FaceRecord(face_id=face_id, name=name, metadata=metadata)
+            self.records.append(record)
+            self.index.add(embedding.reshape(1, -1).astype("float32"))
+            self._save()
+            return record
 
     def verify(self, face_id: str, embedding: np.ndarray) -> tuple[bool, float]:
         """1:1 — does this embedding match the registered face?"""
-        idx = self._index_of(face_id)
-        if idx is None:
-            return False, 0.0
-
-        stored = self._get_embedding(idx)
-        sim = float(np.dot(stored, embedding))
-        from face_recognition_engine import SIMILARITY_THRESHOLD
-        return sim >= SIMILARITY_THRESHOLD, round(sim, 4)
+        with self._lock:
+            idx = self._index_of(face_id)
+            if idx is None:
+                return False, 0.0
+            stored = self._get_embedding(idx)
+            sim = float(np.dot(stored, embedding))
+            from face_recognition_engine import SIMILARITY_THRESHOLD
+            return sim >= SIMILARITY_THRESHOLD, round(sim, 4)
 
     def search(self, embedding: np.ndarray, top_k: int = 5) -> list[dict]:
         """1:N — find the top-k most similar registered faces."""
-        if self.index.ntotal == 0:
-            return []
-
-        k = min(top_k, self.index.ntotal)
-        D, I = self.index.search(embedding.reshape(1, -1).astype("float32"), k)
-
-        results = []
-        for sim, idx in zip(D[0], I[0]):
-            if idx < 0:
-                continue
-            rec = self.records[idx]
+        with self._lock:
+            if self.index.ntotal == 0:
+                return []
+            k = min(top_k, self.index.ntotal)
+            D, I = self.index.search(embedding.reshape(1, -1).astype("float32"), k)
             from face_recognition_engine import SIMILARITY_THRESHOLD
-            results.append({
-                "face_id": rec.face_id,
-                "name": rec.name,
-                "similarity": round(float(sim), 4),
-                "matched": float(sim) >= SIMILARITY_THRESHOLD,
-                "metadata": rec.metadata,
-            })
-        return results
+            results = []
+            for sim, idx in zip(D[0], I[0]):
+                if idx < 0:
+                    continue
+                rec = self.records[idx]
+                results.append({
+                    "face_id": rec.face_id,
+                    "name": rec.name,
+                    "similarity": round(float(sim), 4),
+                    "matched": float(sim) >= SIMILARITY_THRESHOLD,
+                    "metadata": rec.metadata,
+                })
+            return results
 
     def delete(self, face_id: str) -> bool:
-        idx = self._index_of(face_id)
-        if idx is None:
-            return False
-
-        # Rebuild index without the deleted entry
-        self.records.pop(idx)
-        all_embeddings = self._all_embeddings_except(idx)
-
-        self.index = faiss.IndexFlatIP(EMBEDDING_DIM)
-        if all_embeddings.shape[0] > 0:
-            self.index.add(all_embeddings)
-        self._save()
-        return True
+        with self._lock:
+            idx = self._index_of(face_id)
+            if idx is None:
+                return False
+            self.records.pop(idx)
+            all_embeddings = self._all_embeddings_except(idx)
+            self.index = faiss.IndexFlatIP(EMBEDDING_DIM)
+            if all_embeddings.shape[0] > 0:
+                self.index.add(all_embeddings)
+            self._save()
+            return True
 
     def get(self, face_id: str) -> FaceRecord | None:
-        idx = self._index_of(face_id)
-        return self.records[idx] if idx is not None else None
+        with self._lock:
+            idx = self._index_of(face_id)
+            return self.records[idx] if idx is not None else None
 
     def list_all(self) -> list[FaceRecord]:
-        return list(self.records)
+        with self._lock:
+            return list(self.records)
 
     # ── Persistence ───────────────────────────────────────────────────────────
 

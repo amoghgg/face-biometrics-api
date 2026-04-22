@@ -2,16 +2,35 @@ import os
 import json
 import base64
 import time
+import asyncio
+import logging
+import dataclasses
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 CAPTURES_DIR = Path(__file__).parent / "captures"
 CAPTURES_DIR.mkdir(exist_ok=True)
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from jose import jwt
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+logger = logging.getLogger("face_api")
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
+class _LimitBodySize(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl and int(cl) > MAX_UPLOAD_BYTES:
+            return JSONResponse({"detail": "Request body too large (max 10 MB)."}, status_code=413)
+        return await call_next(request)
 
 from models import (
     ChallengeType, SessionState, CHALLENGE_SEQUENCE, CHALLENGE_INSTRUCTIONS,
@@ -36,19 +55,41 @@ JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_SECONDS = 300  # token valid for 5 minutes after issuance
 
-# ── App setup ─────────────────────────────────────────────────────────────────
-app = FastAPI(title="Face Biometrics API", version="2.0.0")
+# ── Config ────────────────────────────────────────────────────────────────────
+_cors_raw = os.getenv("CORS_ORIGINS", "*")
+CORS_ORIGINS = ["*"] if _cors_raw.strip() == "*" else [o.strip() for o in _cors_raw.split(",")]
 
+
+async def _session_cleanup_loop():
+    while True:
+        await asyncio.sleep(60)
+        session_manager.cleanup_expired()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    task = asyncio.create_task(_session_cleanup_loop())
+    logger.info("Face Biometrics API started")
+    yield
+    task.cancel()
+    engine.close()
+    logger.info("Face Biometrics API shut down")
+
+
+# ── App setup ─────────────────────────────────────────────────────────────────
+app = FastAPI(title="Face Biometrics API", version="2.0.0", lifespan=lifespan)
+
+app.add_middleware(_LimitBodySize)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-engine         = LivenessEngine()
-rec_engine     = FaceRecognitionEngine()
+engine          = LivenessEngine()
+rec_engine      = FaceRecognitionEngine()
 photo_validator = PhotoValidator()
 
 # Per-session rPPG engines — keyed by session_id, cleaned up on session end
@@ -57,6 +98,13 @@ rppg_engines: dict[str, RPPGEngine] = {}
 # Per-session last ROI center position (normalized 0-1) — used to detect
 # inter-frame head movement and discard motion-corrupted samples.
 rppg_last_pos: dict[str, tuple[float, float]] = {}
+
+
+# ── Health check ──────────────────────────────────────────────────────────────
+
+@app.get("/health")
+def health():
+    return {"status": "ok", "faces_registered": face_db.index.ntotal}
 
 
 # ── REST endpoints ────────────────────────────────────────────────────────────
@@ -112,9 +160,6 @@ async def validate_photo(
         raise HTTPException(status_code=400, detail="Empty image data.")
 
     result = photo_validator.validate(image_bytes)
-
-    # Convert dataclass → dict for JSON serialisation
-    import dataclasses
     return dataclasses.asdict(result)
 
 
@@ -281,9 +326,10 @@ async def liveness_websocket(websocket: WebSocket, session_id: str):
 
             current_challenge = session.current_challenge
 
-            # Debug: log metrics every 15 frames
             if session.consecutive_count % 15 == 0:
-                print(f"[DEBUG] challenge={current_challenge.value} yaw={metrics.yaw_proxy:.3f} smile={metrics.smile_score:.3f} consec={session.consecutive_count}")
+                logger.debug("challenge=%s yaw=%.3f smile=%.3f consec=%d",
+                             current_challenge.value, metrics.yaw_proxy,
+                             metrics.smile_score, session.consecutive_count)
 
             # No face — don't terminate, just guide the user back into frame
             if not metrics.face_detected:
@@ -518,28 +564,18 @@ def analyze_face(body: AnalyzeRequest):
     if not rec_result.face_detected:
         return AnalyzeResponse(face_detected=False)
 
-    # MediaPipe for emotion + smile
+    # MediaPipe for emotion + smile — blendshapes are already in the metrics,
+    # no need to run the detector a second time.
     liveness_metrics = engine.process_frame(img_bytes)
 
     emotions: dict | None = None
     dom_emotion: str | None = None
     smile: float | None = None
 
-    if liveness_metrics.face_detected:
-        import mediapipe as mp
-        import cv2
-        import numpy as np
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        mp_result = engine.detector.detect(mp_image)
-        bs = engine.extract_blendshapes(mp_result)
-
-        if bs:
-            emotions = blendshapes_to_emotions(bs)
-            dom_emotion = dominant_emotion(emotions)
-            smile = liveness_metrics.smile_score
+    if liveness_metrics.face_detected and liveness_metrics.blendshapes:
+        emotions = blendshapes_to_emotions(liveness_metrics.blendshapes)
+        dom_emotion = dominant_emotion(emotions)
+        smile = liveness_metrics.smile_score
 
     return AnalyzeResponse(
         face_detected=True,

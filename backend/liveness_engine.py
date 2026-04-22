@@ -77,6 +77,7 @@ class LivenessEngine:
         texture_var, z_std, is_spoof = self._check_spoof(frame, landmarks, w, h)
         forehead    = self.extract_forehead_rgb(frame, landmarks, w, h)
 
+        bs = self.extract_blendshapes(result)
         metrics = FaceMetrics(
             face_detected=True,
             yaw_proxy=round(yaw_proxy, 4),
@@ -84,6 +85,7 @@ class LivenessEngine:
             texture_variance=round(texture_var, 2),
             landmark_z_std=round(z_std, 6),
             is_spoof=is_spoof,
+            blendshapes=bs if bs else None,
         )
 
         if forehead is not None:

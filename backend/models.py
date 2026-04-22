@@ -50,6 +50,8 @@ class FaceMetrics(BaseModel):
     # Forehead sampling region — for debug visualization
     forehead_rgb: Optional[list[float]] = None       # [r, g, b] 0-255
     forehead_bbox_norm: Optional[list[float]] = None  # [x1, y1, x2, y2] 0-1
+    # Raw blendshapes — populated so callers don't need to re-run the detector
+    blendshapes: Optional[dict[str, float]] = None
 
 
 class FrameResponse(BaseModel):
