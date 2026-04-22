@@ -1,0 +1,21 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+    volumes:
+      # Persist face database and captured photos across restarts
+      - ./data/face_db:/app/face_db
+      - ./data/captures:/app/captures
+    restart: unless-stopped
+
+  # Optional: serve the frontend debug UI
+  frontend:
+    image: nginx:alpine
+    ports:
+      - "5500:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    restart: unless-stopped

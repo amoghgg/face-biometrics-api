@@ -1,5 +1,12 @@
 # Face Biometrics API
 
+![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688?logo=fastapi&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Docker](https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white)
+![MediaPipe](https://img.shields.io/badge/MediaPipe-478%20landmarks-orange)
+![InsightFace](https://img.shields.io/badge/InsightFace-ArcFace%20buffalo__l-red)
+
 A self-hosted, open-source face biometrics backend with **liveness detection**, **photo validation**, **face recognition**, and a **React Native camera component** — built without any paid SDKs.
 
 Built with [InsightFace](https://github.com/deepinsight/insightface) (buffalo_l), [MediaPipe](https://developers.google.com/mediapipe), and FastAPI.
@@ -93,32 +100,44 @@ face-biometrics-api/
 
 ## Quick start
 
-### Prerequisites
-
-- Python 3.10–3.13
-- `pip` or `conda`
-
-### 1. Clone and install
+### Option A — Docker (recommended)
 
 ```bash
 git clone https://github.com/amoghgg/face-biometrics-api
-cd face-biometrics-api/backend
-pip install -r requirements.txt
+cd face-biometrics-api
+docker compose up
 ```
 
-> On some systems: `pip install --break-system-packages -r requirements.txt`
+> First build takes 5–10 minutes — it downloads InsightFace buffalo_l (~500 MB) and MediaPipe models inside the image so startup is instant afterwards.
 
-### 2. Download models
+- API + docs: `http://localhost:8000/docs`
+- Frontend debug UI: `http://localhost:5500`
 
-**MediaPipe FaceLandmarker** (~30 MB):
+Face database and captures are persisted in `./data/` on your host machine.
+
+---
+
+### Option B — Local Python
+
+**Prerequisites:** Python 3.10–3.13, `pip`
+
 ```bash
-curl -L -o backend/face_landmarker.task \
-  https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+git clone https://github.com/amoghgg/face-biometrics-api
+cd face-biometrics-api
+pip install -r backend/requirements.txt
 ```
 
-**InsightFace buffalo_l** — downloads automatically on first run (~500 MB).
+> On some systems: `pip install --break-system-packages -r backend/requirements.txt`
 
-### 3. Run
+**Download models** (run once):
+
+```bash
+bash model_download.sh
+```
+
+This downloads the MediaPipe FaceLandmarker (~30 MB) and pre-caches InsightFace buffalo_l (~500 MB). Without it, the first API request will trigger a silent 500 MB download.
+
+**Run:**
 
 ```bash
 cd backend
