@@ -1,4 +1,4 @@
-# Face Biometrics API
+# Face Biometrics API — open-source liveness detection & face recognition
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.110%2B-009688?logo=fastapi&logoColor=white)
@@ -7,7 +7,14 @@
 ![MediaPipe](https://img.shields.io/badge/MediaPipe-478%20landmarks-orange)
 ![InsightFace](https://img.shields.io/badge/InsightFace-ArcFace%20buffalo__l-red)
 
-A self-hosted, open-source face biometrics backend with **liveness detection**, **photo validation**, **face recognition**, and a **React Native camera component** — built without any paid SDKs.
+A self-hosted, open-source face biometrics backend with **liveness detection (face anti-spoofing)**, **photo validation**, **face recognition**, and a **React Native camera component** — built without any paid SDKs.
+
+Use it as a free, self-hosted alternative to AWS Rekognition, Azure Face, FaceTec or Luxand for:
+
+- **eKYC / identity verification** — liveness check plus 1:1 face match against an ID photo
+- **Presentation attack detection** — rejects printed photos, screen replays and still images (rPPG heartbeat + challenge-response)
+- **AI-generated / deepfake photo rejection** at onboarding
+- **Face attendance and access control** — 1:N face search over a FAISS index
 
 Built with [InsightFace](https://github.com/deepinsight/insightface) (buffalo_l), [MediaPipe](https://developers.google.com/mediapipe), and FastAPI.
 
@@ -282,7 +289,6 @@ PRs welcome. Most useful contributions:
 - Improved AI-image detection (better thresholds, more signals)
 - GPU support (`CUDAExecutionProvider` for InsightFace)
 - Flutter version of `FaceCapture`
-- Docker / docker-compose setup
 - Test coverage
 
 ---
